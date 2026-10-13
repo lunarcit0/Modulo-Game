@@ -1,6 +1,6 @@
 # Modulo Quest
 
-Hey so i used chat for most of this project (not ashamed) feel free to play. anyway ill let chat explain it to you. Best - Lunarcit0
+Hey so i used chat for most of this game. I made it so I could understand Modulo Arithmetic (not ashamed) feel free to play. anyway I'll let chat explain it to you. Best - Lunarcit0
 
 ## Run locally
 Open index.html in your browser. No installation or build step is required.
