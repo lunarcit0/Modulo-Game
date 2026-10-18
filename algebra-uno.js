@@ -13,20 +13,39 @@ const AlgebraUno = (() => {
 })();
 (() => {
  const $=id=>document.getElementById('uno-'+id), A=AlgebraUno;
- let state,pending=null,unoCalled=false,aiJob=null,gameId=0;
+ let state,pending=null,unoCalled=false,aiJob=null,gameId=0,scenePrevious=null;
  const colorName=f=>({x:'Green',y:'Blue','x²':'Red','y²':'Yellow'})[f];
  function cardClass(c){return 'algebra-card original-card';}
  function artwork(node,c){const img=document.createElement('img');img.src=c.art;img.alt=A.label(c);img.draggable=false;node.replaceChildren(img);}
  function note(s){$('message').textContent=s;}
  function log(s){const li=document.createElement('li');li.textContent=s;$('log').prepend(li);while($('log').children.length>8)$('log').lastChild.remove();}
+ function flyCard(from,to,card){
+  if(window.matchMedia('(prefers-reduced-motion: reduce)').matches||!from||!to)return;
+  const a=from.getBoundingClientRect(),b=to.getBoundingClientRect();if(!a.width||!b.width)return;
+  const flying=document.createElement('div');flying.className='uno-flying '+(card?'':'card-back');
+  if(card)artwork(flying,card);else flying.textContent='✦';
+  Object.assign(flying.style,{left:(a.left+a.width/2-32)+'px',top:(a.top+a.height/2-45)+'px'});document.body.append(flying);
+  const motion=flying.animate([{transform:'translate(0,0) rotate(-12deg)',opacity:1},{transform:`translate(${b.left+b.width/2-a.left-a.width/2}px,${b.top+b.height/2-a.top-a.height/2}px) rotate(5deg)`,opacity:1}],{duration:480,easing:'cubic-bezier(.22,.68,.2,1)',fill:'forwards'});
+  motion.onfinish=()=>flying.remove();motion.oncancel=()=>flying.remove();
+ }
+ function updateScene(){
+  const backs=$('computer-hand');if(!backs)return;const hand=$('hand'),n=state.hands[0].length,w=window.innerWidth<=600?78:92,available=(hand.clientWidth||600)-36;hand.style.setProperty('--card-overlap',Math.min(w-28,Math.max(14,(n*w-available)/Math.max(1,n-1)))+'px');backs.replaceChildren();const count=Math.min(state.hands[1].length,10);
+  for(let i=0;i<count;i++){const back=document.createElement('span');back.className='opponent-card card-back';back.textContent='✦';back.style.setProperty('--fan-angle',((i-(count-1)/2)*5)+'deg');backs.append(back);}
+  const top=state.discard.at(-1);
+  if(scenePrevious){
+   if(scenePrevious.top!==top.id)flyCard(scenePrevious.turn===1?backs:$('hand'),$('top'),top);
+   for(let who=0;who<2;who++)if(state.hands[who].length>scenePrevious.counts[who])flyCard($('draw'),who===1?backs:$('hand'),null);
+  }
+  scenePrevious={top:top.id,turn:state.turn,counts:state.hands.map(h=>h.length)};
+ }
  function render(){
   const top=state.discard.at(-1);$('top').className=cardClass(top);artwork($('top'),top);$('active').textContent=`Active color: ${colorName(state.color)} · ${state.color}`;
-  $('computer-count').textContent=`Computer: ${state.hands[1].length} cards${state.hands[1].length===1?' · UNO!':''}`;
-  $('turn').textContent=state.winner!==null?(state.winner===0?'You win!':'Computer wins. Try another round?'):state.turn===0?'Your turn':'Computer’s turn…';
+  $('computer-count').textContent=`Opponent: ${state.hands[1].length} cards${state.hands[1].length===1?' · UNO!':''}`;
+  $('turn').textContent=state.winner!==null?(state.winner===0?'You win!':'Opponent wins. Try another round?'):state.turn===0?'Your turn':'Opponent’s turn…';
   $('hand-title').textContent=`Your hand · ${state.hands[0].length} cards`;$('hand').replaceChildren();
-  state.hands[0].forEach(c=>{const b=document.createElement('button');b.type='button';b.className=cardClass(c);artwork(b,c);const playable=A.legal(c,top,state.color);b.disabled=state.winner!==null||state.turn!==0||pending!==null;b.setAttribute('aria-label',`${A.label(c)}, ${c.family?colorName(c.family):'any color'}. ${playable?'Playable':'Does not match; selecting costs a card'}`);b.addEventListener('click',()=>select(c));$('hand').append(b);});
+  state.hands[0].forEach(c=>{const b=document.createElement('button');b.type='button';b.className=cardClass(c);const handCount=state.hands[0].length;const position=state.hands[0].indexOf(c)-(handCount-1)/2;b.style.setProperty('--player-angle',(position*Math.min(5,32/Math.max(1,handCount-1)))+'deg');b.style.setProperty('--player-lift',(-Math.max(0,22-Math.abs(position)*5))+'px');artwork(b,c);const playable=A.legal(c,top,state.color);b.disabled=state.winner!==null||state.turn!==0||pending!==null;b.setAttribute('aria-label',`${A.label(c)}, ${c.family?colorName(c.family):'any color'}. ${playable?'Playable':'Does not match; selecting costs a card'}`);b.addEventListener('click',()=>select(c));$('hand').append(b);});
   $('draw').disabled=state.turn!==0||pending!==null||state.winner!==null;$('call').disabled=state.turn!==0||state.hands[0].length!==2||state.winner!==null;$('call').textContent=unoCalled?'UNO called ✓':'Call UNO';
-  $('challenge').hidden=!pending||pending.kind!=='term';$('colors').hidden=!pending||!['wild','draw'].includes(pending.kind);
+  $('challenge').hidden=!pending||pending.kind!=='term';$('colors').hidden=!pending||!['wild','draw'].includes(pending.kind);updateScene();
  }
  function schedule(){if(state.winner!==null||state.turn!==1)return;const version=gameId;clearTimeout(aiJob);aiJob=setTimeout(()=>{if(version!==gameId)return;computer();},850);}
  function commit(c,color){
@@ -45,20 +64,20 @@ const AlgebraUno = (() => {
  function computer(){
   if(state.turn!==1||state.winner!==null)return;
   const candidates=state.hands[1].filter(c=>A.legal(c,state.discard.at(-1),state.color));
-  if(!candidates.length){A.draw(state,1);state.turn=0;log('Computer drew 1 card.');note('Your turn.');render();return;}
+  if(!candidates.length){A.draw(state,1);state.turn=0;log('Opponent drew 1 card.');note('Your turn.');render();return;}
   // Prefer an action, then a color represented often in its remaining hand; wild last.
   candidates.sort((a,b)=>(a.kind==='wild')-(b.kind==='wild')||(b.kind!=='term')-(a.kind!=='term'));
   const c=candidates[0],prior=state.discard.at(-1);const color=A.families.reduce((best,f)=>state.hands[1].filter(v=>v.family===f).length>state.hands[1].filter(v=>v.family===best).length?f:best,A.families[0]);
   A.play(state,1,c.id,color);
-  if(c.kind==='term'){const sum=prior.kind==='term'&&prior.family===c.family?prior.n+c.n:c.n;log(`Computer: ${A.label(c)} → ${A.term(sum,c.family)}.`);}else log(`Computer played ${A.label(c)}${['wild','draw'].includes(c.kind)?' · '+colorName(color):''}.`);
-  if(state.hands[1].length===1)log('Computer calls UNO!');
-  note(c.kind==='draw'?'Computer played Draw 2: you draw two cards and lose your turn.':c.kind==='skip'||c.kind==='reverse'?'Computer skips your turn.':'Your turn.');render();schedule();
+  if(c.kind==='term'){const sum=prior.kind==='term'&&prior.family===c.family?prior.n+c.n:c.n;log(`Opponent: ${A.label(c)} → ${A.term(sum,c.family)}.`);}else log(`Opponent played ${A.label(c)}${['wild','draw'].includes(c.kind)?' · '+colorName(color):''}.`);
+  if(state.hands[1].length===1)log('Opponent calls UNO!');
+  note(c.kind==='draw'?'Opponent played Draw 2: you draw two cards and lose your turn.':c.kind==='skip'||c.kind==='reverse'?'Opponent skips your turn.':'Your turn.');render();schedule();
  }
  $('check').addEventListener('submit',e=>{e.preventDefault();if(!pending||pending.kind!=='term')return;const raw=$('coefficient').value.trim().replace('−','-');if(!/^[+-]?\d+$/.test(raw)){note('Enter a whole-number coefficient, such as 1, −2, or 0.');return;}const top=state.discard.at(-1),sum=top.kind==='term'&&top.family===pending.family?top.n+pending.n:pending.n;if(Number(raw)===sum)commit(pending);else{note(`The coefficient is ${sum}: ${A.term(sum,pending.family)}. You keep your card, draw 1, and your turn ends.`);log('Incorrect reduction: you drew 1.');A.draw(state,0);state.turn=1;pending=null;unoCalled=false;render();schedule();}});
  $('cancel').addEventListener('click',()=>{pending=null;render();note('Choose a card or draw.');});
  A.families.forEach((f,i)=>{const b=document.createElement('button');b.type='button';b.className='uno-color family-'+i;b.textContent=`${colorName(f)} · ${f}`;b.addEventListener('click',()=>{if(pending&&['wild','draw'].includes(pending.kind))commit(pending,f);});$('colors').append(b);});
  $('draw').addEventListener('click',()=>{if(state.turn!==0||pending||state.winner!==null)return;A.draw(state,0);state.turn=1;unoCalled=false;log('You drew 1 card.');note('Drawn card added to your hand. Your turn ends.');render();schedule();});
  $('call').addEventListener('click',()=>{unoCalled=true;render();note('UNO ready—now play your second-to-last card.');});
- function reset(){clearTimeout(aiJob);gameId++;state=A.create();pending=null;unoCalled=false;$('log').replaceChildren();note('You go first. Select a card, or draw one.');render();}
+ function reset(){document.querySelectorAll('.uno-flying').forEach(el=>el.remove());scenePrevious=null;clearTimeout(aiJob);gameId++;state=A.create();pending=null;unoCalled=false;$('log').replaceChildren();note('You go first. Select a card, or draw one.');render();}
  $('new').addEventListener('click',reset);reset();
 })();
