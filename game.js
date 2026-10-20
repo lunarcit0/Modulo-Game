@@ -8,10 +8,11 @@ function clockValue(){return elapsed+(clockRunning&&!paused&&!finished?Date.now(
 function updateClock(){$('timer').textContent=timeText(clockValue());}
 function beginClock(){clearInterval(timerHandle);elapsed=0;paused=false;finished=false;clockRunning=false;startedAt=Date.now();$('pause').textContent='Stop';$('pause').disabled=true;$('clock-start').disabled=false;updateClock();timerHandle=setInterval(updateClock,250);}
 function stopClock(){elapsed=clockValue();finished=true;clockRunning=false;$('clock-start').disabled=true;clearInterval(timerHandle);updateClock();$('pause').disabled=true;}
-let round,score,streak,best,current,answered,number,divisor,seen;
-function start(){round=1;score=0;streak=0;best=0;seen=new Set();beginClock();$('restart').hidden=true;question();}
+let round,score,streak,best,current,answered,number,divisor,seen,sessionTopics;
+if(typeof lecture308Topics!=='undefined')Object.assign(labels,lecture308Topics);
+function start(){round=1;score=0;streak=0;best=0;seen=new Set();sessionTopics=Object.keys(labels).filter(t=>$('topic').value!=='newlectures'||(typeof lecture308Topics!=='undefined'&&Object.hasOwn(lecture308Topics,t)));for(let i=sessionTopics.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[sessionTopics[i],sessionTopics[j]]=[sessionTopics[j],sessionTopics[i]];}beginClock();$('restart').hidden=true;question();}
 function question(){
- const mode=$('topic').value;const topic=practiceTopic('308',mode==='mixed'?Object.keys(labels)[(round-1)%6]:mode);
+ const mode=$('topic').value;const topic=practiceTopic('308',mode==='mixed'||mode==='newlectures'?sessionTopics[(round-1)%sessionTopics.length]:mode);
  const level=Math.min(3,1+Math.floor(score/3));
  for(let tries=0;tries<30;tries++){current=makeQuestion(topic,level);if(!seen.has(current.prompt))break;}
  seen.add(current.prompt);$('form').inert=false;$('choices').inert=false;$('next').disabled=false;$('question').style.opacity='1';answered=false;number=current.number;divisor=current.divisor;
@@ -23,7 +24,7 @@ function question(){
  $('form').hidden=!!current.options;$('choices').hidden=!current.options;$('choices').replaceChildren();
  $('answer').disabled=false;$('submit').disabled=false;$('answer').value='';$('answer').className=current.type==='set'?'set-answer':'';
  $('answer').placeholder=current.type==='set'?'1, 2 or ∅':'?';$('answer').inputMode=current.type==='set'?'text':'numeric';
- $('card-note').textContent=topic==='proofs'?'Practice proof steps here; write complete proofs on paper.':current.type==='set'?'Enter comma-separated numbers; use ∅, {} or “empty” for the empty set.':'Based on MATH 308 Lectures 1–7 and Exam I Review. No timer.';
+ $('card-note').textContent=current.lecture?`Adapted from Lecture ${current.lecture} · Write the full argument on paper; the game checks the specific answer, not a complete proof.`:topic==='proofs'?'Practice proof steps here; write complete proofs on paper.':current.type==='set'?'Enter comma-separated numbers; use ∅, {} or “empty” for the empty set.':'Based on MATH 308 Lectures 1–12. Timer starts when you answer, or use Start.';
  if(current.options){
   const options=[...current.options];for(let i=options.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[options[i],options[j]]=[options[j],options[i]];}
   options.forEach(text=>{const b=document.createElement('button');b.type='button';b.textContent=text;b.addEventListener('click',()=>submit(text,b));$('choices').append(b);});
@@ -36,14 +37,14 @@ function parseSet(text){if(['∅','{}','empty'].includes(text.trim().toLowerCase
 function submit(value,button){
  if(answered||paused)return;let right;
  if(current.type==='set'){const parsed=parseSet(value);if(parsed===null){$('feedback').textContent='Enter numbers separated by commas, or ∅ for an empty set.';return;}right=JSON.stringify(parsed)===JSON.stringify(current.answer);}
- else if(current.options)right=value===current.answer;
+ else if(current.options){if(!clockRunning&&!finished)$('clock-start').click();right=value===current.answer;}
  else{if(!/^\d+$/.test(value.trim())||!Number.isSafeInteger(Number(value))){$('feedback').textContent='Enter a nonnegative whole number.';return;}right=Number(value)===Number(current.answer);}
  answered=true;if(right){score++;streak++;best=Math.max(best,streak);}else streak=0;
  $('score').textContent=score;$('streak').textContent=streak;$('progress').style.width=`${round*10}%`;
  $('feedback').textContent=`${right?'Correct!':'Let’s work through it.'} ${current.explanation}`;
  $('answer').disabled=true;$('submit').disabled=true;$('hint').disabled=true;
  for(const b of $('choices').children){b.disabled=true;if(b.textContent===current.answer)b.classList.add('correct');else if(b===button)b.classList.add('wrong');}
- if(current.paper){$('concept-visual').hidden=false;$('concept-visual').innerHTML='<h3>WORKED CALCULATION</h3>'+flowDiagram(current.steps||[current.explanation]);}else if(current.topic==='modulo')reveal();else showConceptVisual(current);
+ if(current.paper){$('concept-visual').hidden=false;$('concept-visual').innerHTML=(current.lecture?'<h3>WORKED REASONING</h3>':'<h3>WORKED CALCULATION</h3>')+flowDiagram(current.steps||[current.explanation]);if(current.proofTask){const task=document.createElement('details'),summary=document.createElement('summary'),prompt=document.createElement('p'),rubric=document.createElement('p');task.className='full-proof-task';summary.textContent='Write a full proof · optional';prompt.textContent=current.proofTask;rubric.textContent='Self-check: state the domain and assumptions; justify each implication; verify witnesses or base cases; use the hypothesis without assuming the conclusion; finish with the claimed result. This written proof is not automatically graded.';task.append(summary,prompt,rubric);$('concept-visual').append(task);}}else if(current.topic==='modulo')reveal();else showConceptVisual(current);
  $('next').hidden=false;$('next').textContent=round===10?'See my results →':'Next round →';$('next').focus();
 }
 function reveal() {
